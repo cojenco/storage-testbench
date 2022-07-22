@@ -18,6 +18,7 @@ from . import (
     common,
     csek,
     database,
+    handle_gzip,
     proto2rest,
     grpc_server,
     rest_server,

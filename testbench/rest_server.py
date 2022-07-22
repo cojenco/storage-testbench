@@ -1055,16 +1055,18 @@ def delete_resumable_upload(bucket_name):
 server = flask.Flask(__name__)
 server.debug = False
 server.register_error_handler(Exception, testbench.error.RestException.handler)
-server.wsgi_app = DispatcherMiddleware(
-    root,
-    {
-        "/httpbin": echo.app(),
-        GCS_HANDLER_PATH: gcs,
-        DOWNLOAD_HANDLER_PATH: download,
-        UPLOAD_HANDLER_PATH: upload,
-        PROJECTS_HANDLER_PATH: projects_app,
-        IAM_HANDLER_PATH: iam_app,
-    },
+server.wsgi_app = testbench.handle_gzip.HandleGzipMiddleware(
+    DispatcherMiddleware(
+        root,
+        {
+            "/httpbin": echo.app(),
+            GCS_HANDLER_PATH: gcs,
+            DOWNLOAD_HANDLER_PATH: download,
+            UPLOAD_HANDLER_PATH: upload,
+            PROJECTS_HANDLER_PATH: projects_app,
+            IAM_HANDLER_PATH: iam_app,
+        },
+    )
 )
 
 
