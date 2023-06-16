@@ -966,26 +966,16 @@ def resumable_upload_chunk(bucket_name):
         data = testbench.common.interrupt_media(data, 262144)
         upload.media += data
         upload.complete = False
-        blob, _ = gcs_type.object.Object.init(
-            upload.request,
-            upload.metadata,
-            upload.media,
-            upload.bucket,
-            False,
-            None,
-        )
-        blob.metadata.metadata["x_emulator_transfer_encoding"] = ":".join(
-            upload.transfer
-        )
-        db.insert_object(
-            bucket_name,
-            blob,
-            context=None,
-            preconditions=testbench.common.make_json_preconditions(
-                upload.request
-            ),
-        )
         return flask.Response("Service Unavailable", status=503)
+    error_code = testbench.common.error_after_bytes_in_resumable_uploads(upload, data, db, request)
+    import pdb; pdb.set_trace()
+    if error_code:
+        testbench.error.generic(
+            "Fault injected during a resumable upload",
+            rest_code=error_code,
+            grpc_code=None,
+            context=None,
+        )
 
     if content_range is not None:
         items = list(testbench.common.content_range_split.match(content_range).groups())

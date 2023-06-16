@@ -789,25 +789,25 @@ def handle_retry_test_instruction(database, request, socket_closer, method):
         return __get_streamer_response_fn(
             database, method, socket_closer, test_id, limit=after_bytes
         )
-    error_after_bytes_matches = testbench.common.retry_return_error_after_bytes.match(
-        next_instruction
-    )
-    if error_after_bytes_matches and method == "storage.objects.insert":
-        items = list(error_after_bytes_matches.groups())
-        error_code = int(items[0])
-        after_bytes = int(items[1]) * 1024
-        # Upload failures should allow to not complete after certain bytes
-        upload_id = request.args.get("upload_id", None)
-        if upload_id is not None:
-            upload = database.get_upload(upload_id, None)
-            if upload is not None and len(upload.media) >= after_bytes:
-                database.dequeue_next_instruction(test_id, method)
-                testbench.error.generic(
-                    "Fault injected after uploading %d bytes" % len(upload.media),
-                    rest_code=error_code,
-                    grpc_code=StatusCode.INTERNAL,  # not really used
-                    context=None,
-                )
+    # error_after_bytes_matches = testbench.common.retry_return_error_after_bytes.match(
+    #     next_instruction
+    # )
+    # if error_after_bytes_matches and method == "storage.objects.insert":
+    #     items = list(error_after_bytes_matches.groups())
+    #     error_code = int(items[0])
+    #     after_bytes = int(items[1]) * 1024
+    #     # Upload failures should allow to not complete after certain bytes
+    #     upload_id = request.args.get("upload_id", None)
+    #     if upload_id is not None:
+    #         upload = database.get_upload(upload_id, None)
+    #         if upload is not None and len(upload.media) >= after_bytes:
+    #             database.dequeue_next_instruction(test_id, method)
+    #             testbench.error.generic(
+    #                 "Fault injected after uploading %d bytes" % len(upload.media),
+    #                 rest_code=error_code,
+    #                 grpc_code=StatusCode.INTERNAL,  # not really used
+    #                 context=None,
+    #             )
     retry_return_short_response = testbench.common.retry_return_short_response.match(
         next_instruction
     )
@@ -839,6 +839,25 @@ def gen_retry_test_decorator(db):
         return decorator
 
     return retry_test
+
+
+def error_after_bytes_in_resumable_uploads(upload, data, database, request):
+    test_id = request.headers.get("x-retry-test-id", None)
+    next_instruction = database.peek_next_instruction(test_id, "storage.objects.insert")
+    if next_instruction:
+        error_after_bytes_matches = testbench.common.retry_return_error_after_bytes.match(next_instruction)
+    if error_after_bytes_matches:
+        database.dequeue_next_instruction(test_id, "storage.objects.insert")
+        items = list(error_after_bytes_matches.groups())
+        error_code = int(items[0])
+        after_bytes = int(items[1]) * 1024
+
+        partial_data = testbench.common.interrupt_media(data, after_bytes)
+        upload.media += partial_data
+        upload.complete = False
+        return error_code
+    else:
+        return 0
 
 
 def handle_gzip_request(request):
