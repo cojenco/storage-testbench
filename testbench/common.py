@@ -789,7 +789,7 @@ def map_closest_http_to_grpc(http_code):
 def handle_retry_test_instruction(database, request, socket_closer, method):
     upload_id = request.args.get("upload_id", None)
     test_id = request.headers.get("x-retry-test-id", None)
-    if not test_id or not database.has_instructions_retry_test(test_id, method):
+    if not test_id or not database.has_instructions_retry_test(test_id, method, transport="JSON"):
         return __get_default_response_fn
     next_instruction = database.peek_next_instruction(test_id, method)
     error_code_matches = testbench.common.retry_return_error_code.match(

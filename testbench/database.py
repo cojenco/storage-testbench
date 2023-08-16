@@ -378,10 +378,12 @@ class Database:
 
     @classmethod
     def __to_serializeable_retry_test(cls, retry_test):
+        # Identified issue #2 - change of test resource instructions scheme requires client side
+        # extra changes in expected test result struct.
         return {
             "id": retry_test["id"],
             "instructions": {
-                key: list(value) for key, value in retry_test["instructions"].items()
+                key: {sub_key: list(sub_value)} for key, value in retry_test["instructions"].items() for sub_key, sub_value in value.items()#key: transport #value is dict
             },
             "completed": retry_test["completed"],
         }
@@ -422,49 +424,57 @@ class Database:
             for failure in failures:
                 self.__validate_injected_failure_description(failure)
 
-    def insert_retry_test(self, instructions):
+    def insert_retry_test(self, instructions, transports):
         with self._retry_tests_lock:
             self.__validate_instructions(instructions)
             retry_test_id = uuid.uuid4().hex
+            # validate transports[0]
             self._retry_tests[retry_test_id] = {
                 "id": retry_test_id,
                 "instructions": {
-                    key: collections.deque(value) for key, value in instructions.items()
+                    transports[0]: {
+                        key: collections.deque(value) for key, value in instructions.items()
+                    }
                 },
                 "completed": False,
             }
+            for transport in transports[1:]:
+                # validate transport
+                self._retry_tests[retry_test_id]["instructions"][transport] = {
+                    key: collections.deque(value) for key, value in instructions.items()
+                }
             return self.__to_serializeable_retry_test(self._retry_tests[retry_test_id])
 
-    def has_instructions_retry_test(self, retry_test_id, method):
+    def has_instructions_retry_test(self, retry_test_id, method, transport="JSON"):
         with self._retry_tests_lock:
-            self.get_retry_test(retry_test_id)
-            if (
-                len(self._retry_tests[retry_test_id]["instructions"].get(method, []))
-                > 0
-            ):
+            retry_test = self.get_retry_test(retry_test_id)
+            # Add validation for request transport as well.
+            if (len(retry_test["instructions"].get(transport).get(method, [])) > 0):
                 return True
             return False
 
-    def peek_next_instruction(self, retry_test_id, method):
+    def peek_next_instruction(self, retry_test_id, method, transport="JSON"):
         with self._retry_tests_lock:
             self.get_retry_test(retry_test_id)
-            if self._retry_tests[retry_test_id]["instructions"] and self._retry_tests[
+            if self._retry_tests[retry_test_id]["instructions"][transport] and self._retry_tests[
                 retry_test_id
-            ]["instructions"].get(method, None):
-                return self._retry_tests[retry_test_id]["instructions"][method][0]
+            ]["instructions"][transport].get(method, None):
+                return self._retry_tests[retry_test_id]["instructions"][transport][method][0]
             else:
                 return None
 
-    def dequeue_next_instruction(self, retry_test_id, method):
+    def dequeue_next_instruction(self, retry_test_id, method, transport="JSON"):
         with self._retry_tests_lock:
             self.get_retry_test(retry_test_id)
-            next_instruction = self._retry_tests[retry_test_id]["instructions"][
+            next_instruction = self._retry_tests[retry_test_id]["instructions"][transport][
                 method
             ].popleft()
             instructions_left = 0
-            for key, value in self._retry_tests[retry_test_id]["instructions"].items():
+            for key, value in self._retry_tests[retry_test_id]["instructions"][transport].items():
                 instructions_left += len(value)
             if instructions_left == 0:
+                # Identified issue # 1 - added complexity to track completion and deque instructions
+                # with dual transports, since in this case the dual transports share a single test id.
                 self._retry_tests[retry_test_id]["completed"] = True
             return next_instruction
 
