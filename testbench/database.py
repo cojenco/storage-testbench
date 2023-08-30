@@ -427,7 +427,8 @@ class Database:
             "storage.hmacKey.get",
             "storage.hmacKey.list",
             "storage.objects.list",
-            "storage.objects.get"
+            "storage.objects.get",
+            "storage.objects.insert"
         }
         if method not in implemented_grpc_w_retry:
             testbench.error.unimplemented(

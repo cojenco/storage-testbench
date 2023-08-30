@@ -755,6 +755,9 @@ def grpc_handle_retry_test_instruction(database, request, context, method):
     error_code_matches = testbench.common.retry_return_error_code.match(
         next_instruction
     )
+    print(f"next_instruction is {next_instruction}")
+    print(f"error_code_matches is {error_code_matches}")
+    # import pdb; pdb.set_trace()
     if error_code_matches:
         database.dequeue_next_instruction(test_id, method)
         items = list(error_code_matches.groups())

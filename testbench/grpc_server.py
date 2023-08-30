@@ -545,8 +545,7 @@ class StorageServicer(storage_pb2_grpc.StorageServicer):
                 next_instruction
             )
         if broken_stream_after_bytes:
-            end = min(start + size, read_end)  # Ensure chunk size does not exceed 2 MiB
-            end = min(start + broken_stream_after_bytes, end)
+            end = min(start + broken_stream_after_bytes, read_end, start + size)
             chunk = blob.media[start:end]
             yield storage_pb2.ReadObjectResponse(
                 checksummed_data={
@@ -673,10 +672,15 @@ class StorageServicer(storage_pb2_grpc.StorageServicer):
     def __get_bucket(self, bucket_name, context) -> storage_pb2.Bucket:
         return self.db.get_bucket(bucket_name, context).metadata
 
+    @retry_test(method="storage.objects.insert")
     def WriteObject(self, request_iterator, context):
+        print("!!!! 1st line of WriteObject grpc_server")
         upload, is_resumable = gcs.upload.Upload.init_write_object_grpc(
             self.db, request_iterator, context
         )
+        print(f"upload is None? {upload is None}")
+        print(f"is_resumable is {is_resumable}")
+        # import pdb; pdb.set_trace()
         if upload is None:
             return None
         if not upload.complete:
