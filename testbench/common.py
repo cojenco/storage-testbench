@@ -1135,9 +1135,10 @@ def map_closest_http_to_grpc(http_code):
     status_map = {
         "400": StatusCode.INVALID_ARGUMENT,
         "401": StatusCode.UNAUTHENTICATED,
-        "408": StatusCode.DEADLINE_EXCEEDED,
+        "408": StatusCode.UNAVAILABLE,  # Unresolved discussion on 408 equivalent, see b/282880909
+        "429": StatusCode.RESOURCE_EXHAUSTED,
         "500": StatusCode.INTERNAL,
         "503": StatusCode.UNAVAILABLE,
-        "504": StatusCode.DEADLINE_EXCEEDED,
+        "504": StatusCode.UNAVAILABLE,  # DEADLINE_EXCEEDED is not retryable client-side based on AIP#194
     }
     return status_map.get(http_code, None)

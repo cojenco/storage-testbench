@@ -22,6 +22,7 @@ import uuid
 import crc32c
 import flask
 from google.protobuf import json_format
+import grpc
 
 import testbench
 from google.storage.v2 import storage_pb2
@@ -218,6 +219,26 @@ class Upload(types.SimpleNamespace):
                         context,
                     )
                     return None, False
+
+            ### THE ACTUAL PART APPENDING CONTENT CHUNK TO UPLOAD
+            ### INSERT HELPER METHOD HERE ###
+            test_id = testbench.common.get_retry_test_id_from_context(context)
+            broken_stream_after_bytes = 0
+            method = "storage.objects.insert"
+            if test_id and db.has_instructions_retry_test(
+                test_id, method, transport="GRPC"
+            ):
+                broken_stream_after_bytes = 8388000
+            chunk_last_byte = len(upload.media) + len(checksummed_data.content) - 1
+            if broken_stream_after_bytes and len(upload.media) < broken_stream_after_bytes and broken_stream_after_bytes <= chunk_last_byte:
+                range_end = len(checksummed_data.content) - (chunk_last_byte - broken_stream_after_bytes + 1)
+                content = testbench.common.partial_media(checksummed_data.content, range_end=range_end, range_start=0)
+                upload.media += content
+                db.dequeue_next_instruction(test_id, method)
+                msg = {"error": {"message": "Retry Test: Caused a {}".format("503")}}
+                testbench.error.inject_error(context, "503", grpc.StatusCode.UNAVAILABLE, msg=msg)
+            ### INSERT HELPER METHOD HERE ###
+
             upload.media += checksummed_data.content
             if request.finish_write:
                 upload.complete = True
