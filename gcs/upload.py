@@ -220,12 +220,14 @@ class Upload(types.SimpleNamespace):
                     )
                     return None, False
 
-            ### INSERT HELPER METHOD HERE ###
+            # Handle retry test return-X-after-YK failures if applicable.
             (
                 rest_code,
                 after_bytes,
                 test_id,
-            ) = testbench.common.get_retry_uploads_error_after_bytes(db, request, context=context, transport="GRPC")
+            ) = testbench.common.get_retry_uploads_error_after_bytes(
+                db, request, context=context, transport="GRPC"
+            )
             expected_persisted_size = len(upload.media) + len(checksummed_data.content)
             if rest_code:
                 testbench.common.handle_grpc_retry_uploads_error_after_bytes(
@@ -235,12 +237,11 @@ class Upload(types.SimpleNamespace):
                     db,
                     rest_code,
                     after_bytes,
-                    last_byte_persisted=0,
-                    chunk_first_byte=0,
+                    write_offset=request.write_offset,
+                    persisted_size=len(upload.media),
                     expected_persisted_size=expected_persisted_size,
                     test_id=test_id,
                 )
-
 
             upload.media += checksummed_data.content
             if request.finish_write:
