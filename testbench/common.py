@@ -931,15 +931,15 @@ def handle_grpc_retry_uploads_error_after_bytes(
     after_bytes,
     last_byte_persisted,
     chunk_first_byte,
-    chunk_last_byte,
+    expected_persisted_size,
     test_id=0,
 ):
     """
     Handle error-after-bytes instructions for resumable uploads and commit only partial data before forcing a testbench error.
     This helper method also ignores request bytes that have already been persisted, which aligns with GCS behavior.
     """
-    if len(upload.media) <= after_bytes and after_bytes <= chunk_last_byte:
-        range_end = len(data) - (chunk_last_byte - after_bytes + 1)
+    if after_bytes > len(upload.media) and after_bytes <= expected_persisted_size:
+        range_end = len(data) - (expected_persisted_size - after_bytes)
         content = testbench.common.partial_media(data, range_end=range_end, range_start=0)
         upload.media += content
         database.dequeue_next_instruction(test_id, "storage.objects.insert")
