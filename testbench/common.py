@@ -857,12 +857,18 @@ def gen_retry_test_decorator(db):
     return retry_test
 
 
-def get_retry_uploads_error_after_bytes(database, request):
+def get_retry_uploads_error_after_bytes(database, request, context=None, transport="JSON"):
     """Retrieve error code and #bytes corresponding to uploads from retry test instructions."""
-    test_id = request.headers.get("x-retry-test-id", None)
+    method = "storage.objects.insert"
+    if context is not None:
+        test_id = get_retry_test_id_from_context(context)
+    else:
+        test_id = request.headers.get("x-retry-test-id", None)
     if not test_id:
         return 0, 0, ""
-    next_instruction = database.peek_next_instruction(test_id, "storage.objects.insert")
+    next_instruction = None
+    if database.has_instructions_retry_test(test_id, method, transport):
+        next_instruction = database.peek_next_instruction(test_id, method)
     if not next_instruction:
         return 0, 0, ""
     error_after_bytes_matches = testbench.common.retry_return_error_after_bytes.match(
@@ -914,6 +920,32 @@ def handle_retry_uploads_error_after_bytes(
             grpc_code=None,
             context=None,
         )
+
+
+def handle_grpc_retry_uploads_error_after_bytes(
+    context,
+    upload,
+    data,
+    database,
+    rest_code,
+    after_bytes,
+    last_byte_persisted,
+    chunk_first_byte,
+    chunk_last_byte,
+    test_id=0,
+):
+    """
+    Handle error-after-bytes instructions for resumable uploads and commit only partial data before forcing a testbench error.
+    This helper method also ignores request bytes that have already been persisted, which aligns with GCS behavior.
+    """
+    if len(upload.media) <= after_bytes and after_bytes <= chunk_last_byte:
+        range_end = len(data) - (chunk_last_byte - after_bytes + 1)
+        content = testbench.common.partial_media(data, range_end=range_end, range_start=0)
+        upload.media += content
+        database.dequeue_next_instruction(test_id, "storage.objects.insert")
+        grpc_code = map_closest_http_to_grpc(str(rest_code))
+        msg = {"error": {"message": "Retry Test: Caused a {}".format(grpc_code)}}
+        testbench.error.inject_error(context, rest_code, grpc_code, msg=msg)
 
 
 def get_retry_test_id_from_context(context):
