@@ -941,12 +941,12 @@ def handle_grpc_retry_uploads_error_after_bytes(
     This helper method also ignores request bytes that have already been persisted, which aligns with GCS behavior.
     """
     if after_bytes > len(upload.media) and after_bytes <= expected_persisted_size:
-        # Only partial data will be commited due to the instructed interruption.
-        range_end = len(data) - (expected_persisted_size - after_bytes)
         # Ignore request bytes that have already been persisted.
         range_start = 0
         if len(upload.media) != 0 and write_offset < persisted_size:
             range_start = persisted_size - write_offset
+        # Only partial data will be commited due to the instructed interruption.
+        range_end = range_start + (after_bytes - len(upload.media))
         content = testbench.common.partial_media(
             data, range_end=range_end, range_start=range_start
         )
