@@ -425,6 +425,24 @@ class Database:
         """Returns Unimplemented 501 for methods that are not yet supported.
         Temporary validation while adding Retry Test API support in gRPC."""
         implemented_grpc_w_retry = {
+            "storage.buckets.delete",
+            "storage.buckets.insert",
+            "storage.buckets.lockRetentionPolicy",
+            "storage.buckets.testIamPermissions",
+            "storage.hmacKey.delete",
+            "storage.notifications.delete", #issue
+            ###
+            # "storage.hmacKey.create", #issue
+            # "storage.notifications.insert", #issue
+            ###
+            "storage.buckets.setIamPolicy",
+            # "storage.objects.delete", #issue
+            # "storage.objects.rewrite", #issue
+            # "storage.objects.compose",  #issue
+            "storage.objects.patch",
+            "storage.buckets.patch",
+            # "storage.hmacKey.update",   #issue
+            ###
             "storage.buckets.get",
             "storage.buckets.getIamPolicy",
             "storage.buckets.list",
@@ -432,7 +450,7 @@ class Database:
             "storage.hmacKey.list",
             "storage.notifications.get",
             "storage.notifications.list",
-            "storage.objects.insert",
+            # "storage.objects.insert", #issue
             "storage.objects.list",
             "storage.objects.get",
             "storage.serviceaccount.get",
