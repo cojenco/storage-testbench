@@ -289,7 +289,18 @@ class Upload(types.SimpleNamespace):
         # Currently, the testbench will checkpoint and flush the data to upload.media per request for testing purposes,
         # instead of the 15 seconds interval used in the GCS server.
         should_checkpoint_session = True
+        method = "storage.objects.insert"
+        count = 0
+        # import pdb; pdb.set_trace()
         for request in request_iterator:
+            print("&& inside iterator")
+            import pdb; pdb.set_trace()
+            rest_code, grpc_code, msg = testbench.common.grpc_bidi_handle_retry_test_instruction(db, request, context, method)
+            if grpc_code:
+                import pdb; pdb.set_trace()
+                yield storage_pb2.BidiWriteObjectResponse(persisted_size=0)
+                return
+                # testbench.error.inject_error(context, rest_code, grpc_code, msg=msg)
             first_message = request.WhichOneof("first_message")
             if first_message == "upload_id":            # resumable upload
                 upload = db.get_upload(request.upload_id, context)
@@ -305,7 +316,7 @@ class Upload(types.SimpleNamespace):
                 upload = cls.__init_first_write_grpc(request, bucket, context)
             elif upload is None:
                 testbench.error.invalid("Upload missing a first_message field", context)
-
+            # print("upload")
             if request.HasField("object_checksums"):
                 # The object checksums may appear only in the first message *or* the last message, but not both
                 if first_message is None and request.finish_write == False:
@@ -345,7 +356,32 @@ class Upload(types.SimpleNamespace):
                         actual_crc32c,
                         context,
                     )
+            count += 1
+            print(f"!!!!! request count {count}")
+            # import pdb; pdb.set_trace()
 
+            # Handle retry test return-X-after-YK failures if applicable.
+            (
+                rest_code,
+                after_bytes,
+                test_id,
+            ) = testbench.common.get_retry_uploads_error_after_bytes(
+                db, request, context=context, transport="GRPC"
+            )
+            expected_persisted_size = request.write_offset + len(content)
+            if rest_code:
+                testbench.common.handle_grpc_retry_uploads_error_after_bytes(
+                    context,
+                    upload,
+                    content,
+                    db,
+                    rest_code,
+                    after_bytes,
+                    write_offset=request.write_offset,
+                    persisted_size=len(upload.media),
+                    expected_persisted_size=expected_persisted_size,
+                    test_id=test_id,
+                )
             # The testbench should ignore any request bytes that have already been persisted,
             # thus we validate write_offset against persisted_size.
             # https://github.com/googleapis/googleapis/blob/15b48f9ed0ae8b034e753c6895eb045f436e257c/google/storage/v2/storage.proto#L320-L329

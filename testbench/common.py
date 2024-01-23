@@ -736,6 +736,28 @@ def __get_limit_response_fn(database, upload_id, test_id, method, limit):
 
     return limited_response_fn
 
+def grpc_bidi_handle_retry_test_instruction(database, request, context, method):
+    print("wooowoooo!!!!!!!!")
+    # import pdb; pdb.set_trace()
+    test_id = get_retry_test_id_from_context(context)
+    # Validate retry instructions, method and request transport.
+    if not test_id or not database.has_instructions_retry_test(
+        test_id, method, transport="GRPC"
+    ):
+        return 0, "", ""
+    next_instruction = database.peek_next_instruction(test_id, method)
+    error_code_matches = testbench.common.retry_return_error_code.match(
+        next_instruction
+    )
+    if error_code_matches:
+        database.dequeue_next_instruction(test_id, method)
+        items = list(error_code_matches.groups())
+        rest_code = items[0]
+        grpc_code = _grpc_forced_failure_from_http_instruction(rest_code)
+        msg = {"error": {"message": "Retry Test: Caused a {}".format(grpc_code)}}
+        print("### right about to inject error")
+        return rest_code, grpc_code, msg 
+
 
 def grpc_handle_retry_test_instruction(database, request, context, method):
     test_id = get_retry_test_id_from_context(context)
@@ -754,6 +776,8 @@ def grpc_handle_retry_test_instruction(database, request, context, method):
         rest_code = items[0]
         grpc_code = _grpc_forced_failure_from_http_instruction(rest_code)
         msg = {"error": {"message": "Retry Test: Caused a {}".format(grpc_code)}}
+        print("### right about to inject error")
+        # import pdb; pdb.set_trace()
         testbench.error.inject_error(context, rest_code, grpc_code, msg=msg)
     retry_connection_matches = testbench.common.retry_return_error_connection.match(
         next_instruction
