@@ -289,7 +289,20 @@ class Upload(types.SimpleNamespace):
         # Currently, the testbench will checkpoint and flush the data to upload.media per request for testing purposes,
         # instead of the 15 seconds interval used in the GCS server.
         should_checkpoint_session = True
+        method = "storage.objects.insert"
+        from grpc import StatusCode
         for request in request_iterator:
+            # Handle retries Part 1
+            rest_code, grpc_code, msg, conn_retry = testbench.common.bidi_get_retry_test_instruction(db, request, context, method)
+            if conn_retry:
+                context.abort(
+                    StatusCode.UNAVAILABLE,
+                    "Injected 'socket closed, connection reset by peer' fault",
+                )
+            elif grpc_code:
+                testbench.error.inject_error(context, rest_code, grpc_code, msg=msg)
+            # Handle retries Part 1
+
             first_message = request.WhichOneof("first_message")
             if first_message == "upload_id":            # resumable upload
                 upload = db.get_upload(request.upload_id, context)
@@ -346,6 +359,28 @@ class Upload(types.SimpleNamespace):
                         context,
                     )
 
+            # Handle retry test return-X-after-YK failures if applicable.
+            (
+                rest_code,
+                after_bytes,
+                test_id,
+            ) = testbench.common.get_retry_uploads_error_after_bytes(
+                db, request, context=context, transport="GRPC"
+            )
+            expected_persisted_size = request.write_offset + len(content)
+            if rest_code:
+                testbench.common.handle_grpc_retry_uploads_error_after_bytes(
+                    context,
+                    upload,
+                    content,
+                    db,
+                    rest_code,
+                    after_bytes,
+                    write_offset=request.write_offset,
+                    persisted_size=len(upload.media),
+                    expected_persisted_size=expected_persisted_size,
+                    test_id=test_id,
+                )
             # The testbench should ignore any request bytes that have already been persisted,
             # thus we validate write_offset against persisted_size.
             # https://github.com/googleapis/googleapis/blob/15b48f9ed0ae8b034e753c6895eb045f436e257c/google/storage/v2/storage.proto#L320-L329

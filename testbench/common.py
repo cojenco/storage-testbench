@@ -769,6 +769,38 @@ def grpc_handle_retry_test_instruction(database, request, context, method):
     return __get_default_response_fn
 
 
+def bidi_get_retry_test_instruction(database, request, context, method):
+    print("!!! new handle!!!")
+    test_id = get_retry_test_id_from_context(context)
+    # Validate retry instructions, method and request transport.
+    rest_code, grpc_code, msg, conn_retry = "", "", "", False
+    if not test_id or not database.has_instructions_retry_test(
+        test_id, method, transport="GRPC"
+    ):
+        return rest_code, grpc_code, msg, conn_retry
+    next_instruction = database.peek_next_instruction(test_id, method)
+    error_code_matches = testbench.common.retry_return_error_code.match(
+        next_instruction
+    )
+    if error_code_matches:
+        database.dequeue_next_instruction(test_id, method)
+        items = list(error_code_matches.groups())
+        rest_code = items[0]
+        grpc_code = _grpc_forced_failure_from_http_instruction(rest_code)
+        msg = {"error": {"message": "Retry Test: Caused a {}".format(grpc_code)}}
+        return rest_code, grpc_code, msg, conn_retry
+    retry_connection_matches = testbench.common.retry_return_error_connection.match(
+        next_instruction
+    )
+    if retry_connection_matches:
+        items = list(retry_connection_matches.groups())
+        if items[0] == "reset-connection":
+            database.dequeue_next_instruction(test_id, method)
+            conn_retry = True
+            return rest_code, grpc_code, msg, conn_retry
+    return rest_code, grpc_code, msg, conn_retry
+
+
 def handle_retry_test_instruction(database, request, socket_closer, method):
     upload_id = request.args.get("upload_id", None)
     test_id = request.headers.get("x-retry-test-id", None)
